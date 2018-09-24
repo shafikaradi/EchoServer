@@ -53,16 +53,15 @@ public class ApplicationLayer extends Object{
 
     }
 
-    public synchronized  void write(ArrayList list) throws IOException{
+    public synchronized  void write(Person person) throws IOException{
 
 
 
-        if(isReadable()) {
-            person = new Person((String) list.get(0), (String) list.get(1));
+
             log(String.format("Person's name is %s and he's %s years old", person.getName(), person.getAge()));
             writeToFile(String.format("Person's name is %s and he's %s years old \n", person.getName(), person.getAge()));
 
-        }
+
 
 
 

@@ -1,24 +1,24 @@
 package com.company;
 
 import java.io.IOException;
-import java.nio.channels.SocketChannel;
-import java.util.ArrayList;
+import java.io.UnsupportedEncodingException;
 
 public class Protocol {
 
 
 
-    private ArrayList<String> list;
+
     private ApplicationLayer appLayer;
     private Person person;
     private byte [] serializedBytes;
     private boolean hasFinished = false;
+    private ProtocolDelegate delegate;
 
     public Protocol(){
 
 
             this.appLayer = new ApplicationLayer();
-            list = new ArrayList<>();
+
 
     }
 
@@ -35,34 +35,40 @@ public class Protocol {
 
 
 
-    public void deserialize( byte [] bytes)throws IOException{
-        String data = new String(bytes).trim();
-        list.add(data);
+    public Object deserialize(){
 
+        byte [] arr = delegate.getPackets();
+        Person person = new Person();
+        person.deserializeAge(arr);
+        person.deserializeNameLength(arr);
 
-        if(list.size() == 2){
-            appLayer.write(list);
-            list.clear();
+        byte [] personByteArray = new byte[person.getNameLength()];
+        System.arraycopy(arr,8,personByteArray,0, person.getNameLength());
+
+        try {
+
+            if(person.getName().getBytes("UTF-16").length != person.getNameLength()){
+                log("part of data is missing");
+            }
+
+            appLayer.write(person);
+
+        } catch (UnsupportedEncodingException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
         }
 
-        if(data.equals("finish")){
 
-
-            hasFinished = true;
-            log("Connection is closed");
-
-        }
+        return person;
     }
 
-    public boolean hasFinished(){
 
-        if(hasFinished)
-            return true;
-         else
-             return false;
-    }
+    public void setDelegate(ProtocolDelegate delegate){ this.delegate = delegate;}
 
     public void log(String statment){
         System.out.println(statment);
     }
+
+
 }

@@ -7,19 +7,20 @@ import java.nio.channels.*;
 import java.util.ArrayList;
 import java.util.Iterator;
 
-public class Server {
+public class Server implements ProtocolDelegate {
 
 
 
     private Selector selector ;
     private ServerSocketChannel ssc;
-
     private ThreadPool pool;
     private Protocol protocol;
-
     private int ops;
-
-
+    private byte [] agePackets;
+    private byte [] nameLengthPackets;
+    private byte [] namePackets;
+    private  byte [] buffHolder;
+    private int counter = 0;
 
     private Server() throws IOException {
         selector = Selector.open();
@@ -28,6 +29,8 @@ public class Server {
         ssc.configureBlocking(false);
         pool = new ThreadPool(3);
         protocol = new Protocol();
+
+        protocol.setDelegate(this);
 
 
 
@@ -57,7 +60,7 @@ public class Server {
 
 
 
-                                    if (key.isAcceptable()) {
+                                    if (key.isValid() && key.isAcceptable()) {
 
 
                                         registerRequest();
@@ -70,10 +73,10 @@ public class Server {
                         pool.execute(() -> {
 
 
-                            if(key.isReadable()){
+                            if(key.isValid() && key.isReadable()){
 
 
-                                answerClient(key);
+                                readRequest(key);
 
 
                             }
@@ -81,6 +84,16 @@ public class Server {
 
 
                         });
+
+
+                        pool.execute(
+
+                                () -> {
+                                    if(key.isValid() && key.isWritable()){
+                                        sendResponse(key);
+                                    }
+                                }
+                        );
 
                     }
 
@@ -101,7 +114,8 @@ public class Server {
 
                 SocketChannel client = ssc.accept();
                 client.configureBlocking(false);
-                client.register(selector, SelectionKey.OP_READ);
+                client.register(selector, SelectionKey.OP_READ | SelectionKey.OP_WRITE);
+
 
         }catch (IOException e){
 
@@ -118,28 +132,41 @@ public class Server {
     }
 
 
-    private synchronized  void answerClient(SelectionKey key){
+    private synchronized  void readRequest(SelectionKey key){
 
 
         try{
 
-            SocketChannel client = (SocketChannel) key.channel();
+            if(key.channel().isOpen()){
 
-            ByteBuffer byteBuffer = ByteBuffer.allocate(256);
-            client.read(byteBuffer);
-            byteBuffer.flip();
-
-
-            byte [] bytes = byteBuffer.array();
+                SocketChannel client = (SocketChannel) key.channel();
+                ByteBuffer byteBuffer = ByteBuffer.allocate(512);
+                int length = client.read(byteBuffer);
 
 
 
-              protocol.deserialize(bytes);
 
-              closeConnection(client);
+                if (length == -1){
+                    log("Nothing more is received");
+
+                    key.cancel();
+                    client.close();
+                    protocol.deserialize();
+                    return;
+                }
 
 
 
+                fillBufferHolder(byteBuffer);
+                byteBuffer.clear();
+
+
+
+
+
+
+
+            }
 
 
         }catch (IOException e){
@@ -150,10 +177,24 @@ public class Server {
 
     }
 
-    public void closeConnection( SocketChannel channel) throws  IOException{
 
-        if(protocol.hasFinished())
-          channel.close();
+    public void sendResponse(SelectionKey key)  {
+
+        SocketChannel client = (SocketChannel) key.channel();
+
+        ByteBuffer buffer = ByteBuffer.allocate(256);
+        String response = "Your Request is in progress";
+        buffer.put(response.getBytes());
+
+
+        try {
+            buffer.flip();
+            client.write(buffer);
+            key.cancel();
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
 
     }
 
@@ -190,7 +231,14 @@ public class Server {
         return new Server();
     }
 
+    public void fillBufferHolder(ByteBuffer byteBuffer) {
+        byteBuffer.get(buffHolder,counter,byteBuffer.position());
+        counter = byteBuffer.position();
+        byteBuffer.flip();
+    }
 
-
-
+    @Override
+    public byte[] getPackets() {
+        return buffHolder;
+    }
 }
